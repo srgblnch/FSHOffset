@@ -26,7 +26,41 @@ __license__ = "GPLv3+"
 from PyTango import DeviceProxy, EventType
 
 
-class Monitor(object):
+class Logger(object):
+    def __init__(self, error=None, warning=None, info=None, debug=None,
+                 *args, **kwargs):
+        super(Logger, self).__init__(*args, **kwargs)
+        self._error = error
+        self._warning = warning
+        self._info = info
+        self._debug = debug
+
+    def error(self, msg):
+        if self._error is None:
+            print("ERROR: %s" % msg)
+        else:
+            self._error(msg)
+
+    def warning(self, msg):
+        if self._warning is None:
+            print("WARNING: %s" % msg)
+        else:
+            self._warning(msg)
+
+    def info(self, msg):
+        if self._info is None:
+            print("INFO: %s" % msg)
+        else:
+            self._info(msg)
+
+    def debug(self, msg):
+        if self._debug is None:
+            print("DEBUG: %s" % msg)
+        else:
+            self._debug(msg)
+
+
+class Monitor(Logger):
     def __init__(self, devName, attrName, minPeriod=0.1, minChange=0.001,
                  callbacks=None, *args, **kwargs):
         super(Monitor, self).__init__(*args, **kwargs)
@@ -49,19 +83,20 @@ class Monitor(object):
         self._eventId = self._proxy.subscribe_event(self._attrName,
                                                     EventType.CHANGE_EVENT,
                                                     self, stateless=True)
-        print("%s subscribed: %d" % (self._name, self._eventId))
+        self.debug("%s subscribed: %d" % (self._name, self._eventId))
 
     def unsubscribe(self):
         self._proxy.unsubscribe_event(self._eventId)
 
     def push_event(self, event):
         if event is not None and event.attr_value is not None:
-            # print("%s event received: %s" % (self._name, event.attr_value))
+            # self.debug("%s event received: %s"
+            #            % (self._name, event.attr_value))
             if self._checkPeriod(event.attr_value.time.totime()):
                 self._timestamp = event.attr_value.time.totime()
                 if self._checkChange(event.attr_value.value):
                     self._value = event.attr_value.value
-                    print("%s new value %s (%s)" % (self._name, self._value,
+                    self.debug("%s new value %s (%s)" % (self._name, self._value,
                                                     self._timestamp))
                     if self._callbacks is not None:
                         for callback in self._callbacks:
@@ -77,14 +112,14 @@ class Monitor(object):
 
     def _checkPeriod(self, timestamp):
         if self._timestamp is None:
-            print("%s: No previous timestamp" % (self._name))
+            self.debug("%s: No previous timestamp" % (self._name))
             return True
         else:
             t_diff = timestamp - self._timestamp
             if t_diff > self._minPeriod:
-                print("%s: old enough value (%f)" % (self._name, t_diff))
+                self.debug("%s: old enough value (%f)" % (self._name, t_diff))
                 return True
-            print("%s: to recent (%f)" % (self._name, t_diff))
+            self.debug("%s: to recent (%f)" % (self._name, t_diff))
         return False
 
     @property
@@ -97,14 +132,14 @@ class Monitor(object):
 
     def _checkChange(self, value):
         if self._value is None:
-            print("%s: No previous value" % (self._name))
+            self.debug("%s: No previous value" % (self._name))
             return True
         else:
             v_diff = abs(value - self._value)
             if v_diff > self._minChange:
-                print("%s: change enough value (%f)" % (self._name, v_diff))
+                self.debug("%s: change enough value (%f)" % (self._name, v_diff))
                 return True
-            print("%s: to small change (%f)" % (self._name, v_diff))
+            self.debug("%s: to small change (%f)" % (self._name, v_diff))
         return False
 
     def _value_getter(self):
@@ -128,13 +163,13 @@ class Writter(Monitor):
         super(Writter, self).__init__(*args, **kwargs)
 
     def _value_setter(self, value):
-        print("%s: write: %s" % (self._name, value))
+        self.info("%s: write: %s" % (self._name, value))
         self._proxy[self._attrName] = value
 
     value = property(Monitor._value_getter, _value_setter)
 
 
-class Formula(object):
+class Formula(Logger):
     def __init__(self, formulaStr, motor, *args, **kwargs):
         super(Formula, self).__init__(*args, **kwargs)
         self._offset = 0
@@ -161,25 +196,35 @@ class Formula(object):
     @formulaStr.setter
     def formulaStr(self, value):
         if value.count("OFFSET") == 0:
-            print("Formula doesn't have OFFSET")
+            self.warning("Formula doesn't have OFFSET (%s)" % value)
         elif value.count("POSITION") == 0:
-            print("Formula doesn't have POSITION")
+            self.warning("Formula doesn't have POSITION (%s)" % value)
         self._formulaStr = value
 
     def evaluate(self):
         formula = self._formulaStr
-        formula = formula.replace("OFFSET", 'self.offset')
-        formula = formula.replace("POSITION", 'self.position')
-        return eval(formula)
+        if formula.count("OFFSET"):
+            formula = formula.replace("OFFSET", 'self.offset')
+        if formula.count("POSITION"):
+            formula = formula.replace("POSITION", 'self.position')
+        result = eval(formula)
+        self.debug("with offset = %s, position = %s, "
+                   "the formula %s returns %s" % (self.offset, self.position,
+                                                  self.formulaStr, result))
+        return result
 
 
-class FSH(object):
-    def __init__(self, motorName, ibaName, formula="OFFSET-POSITION",
+class FSH(Logger):
+    def __init__(self, motorName, ibaName=None, formula=None,
                  *args, **kwargs):
         super(FSH, self).__init__(*args, **kwargs)
-        self._chamberObj = Writter(ibaName, 'ChamberOffsetX')
-        self._positionObj = Monitor(motorName, 'Position')
-        self._formulaObj = Formula(formula, self._positionObj)
+        if ibaName is None:
+            ibaName = motorName+"-iba"
+        if formula is None or formula == []:
+            formula = "OFFSET-POSITION"
+        self._chamberObj = Writter(ibaName, 'ChamberOffsetX', *args, **kwargs)
+        self._positionObj = Monitor(motorName, 'Position', *args, **kwargs)
+        self._formulaObj = Formula(formula, self._positionObj, *args, **kwargs)
         self._positionObj.appendCb(self.evaluate)
 
     @property
@@ -209,7 +254,7 @@ class FSH(object):
         return self._formulaObj.formulaStr
 
     def evaluate(self):
-        print("FSH.evaluate()")
+        self.debug("FSH.evaluate()")
         self._chamberObj.value = self._formulaObj.evaluate()
         return self._chamberObj.value
 
