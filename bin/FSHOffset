@@ -1,0 +1,17 @@
+#!/bin/sh
+
+. alba_blissrc
+
+
+if [[ $# -eq 1 ]] ; then
+    echo "Setting logs to minimum"
+    VERBOSE='-v2'
+else
+    echo "Setting logs to $2"
+    VERBOSE=$2
+fi
+
+DNAME=FSHOffset
+
+cd $SICILIA/ds/python/$DNAME
+screen -dm -S $DNAME-$1 python $DNAME.py $1 $VERBOSE
