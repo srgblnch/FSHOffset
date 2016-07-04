@@ -223,7 +223,7 @@ class FSH(Logger):
     def __init__(self, motorName, ibaName=None, formula=None,
                  *args, **kwargs):
         super(FSH, self).__init__(*args, **kwargs)
-        if ibaName is None:
+        if ibaName is None or ibaName == []:
             ibaName = motorName+"-iba"
         if formula is None or formula == []:
             formula = "OFFSET-POSITION"
