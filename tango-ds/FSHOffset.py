@@ -94,9 +94,15 @@ class FSHOffset (PyTango.Device_4Impl):
         self.set_change_event('Status', True, False)
         self.change_state(PyTango.DevState.INIT)
         self.change_status("Initializing...")
-        self._fsh = FSH(self.motor, self.iba, self.formula,
-                        error=self.error_stream, warning=self.warn_stream,
-                        info=self.info_stream, debug=self.debug_stream)
+        try:
+            self._fsh = FSH(self.motor, self.iba, self.formula,
+                            error=self.error_stream, warning=self.warn_stream,
+                            info=self.info_stream, debug=self.debug_stream)
+        except Exception as e:
+            self.error_stream("Cannot build the FSH object: %s" % e)
+            self.change_state(PyTango.DevState.FAULT)
+            self.change_status("Review the properties")
+            return
         self.info_stream("Prepared the device to work with the formula %s"
                          % (self._fsh.formula))
         self.set_change_event('Offset', True, False)

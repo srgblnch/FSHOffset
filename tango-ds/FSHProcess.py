@@ -67,7 +67,11 @@ class Monitor(Logger):
         self._devName = devName
         self._attrName = attrName
         self._name = "%s/%s" % (devName, attrName)
-        self._proxy = DeviceProxy(self._devName)
+        try:
+            self._proxy = DeviceProxy(self._devName)
+        except:
+            raise ReferenceError("DeviceProxy for %s not available"
+                                 % self._name)
         self._eventId = None
         self._value = None
         self._minPeriod = minPeriod
@@ -86,7 +90,8 @@ class Monitor(Logger):
         self.debug("%s subscribed: %d" % (self._name, self._eventId))
 
     def unsubscribe(self):
-        self._proxy.unsubscribe_event(self._eventId)
+        if hasattr(self, '_proxy') and self._proxy is not None:
+            self._proxy.unsubscribe_event(self._eventId)
 
     def push_event(self, event):
         if event is not None and event.attr_value is not None:
