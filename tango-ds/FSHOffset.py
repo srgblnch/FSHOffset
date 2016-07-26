@@ -92,6 +92,10 @@ class FSHOffset (PyTango.Device_4Impl):
         self.fireEvent('ChamberOffsetX', self._fsh.chamberObj.value,
                        self._fsh.chamberObj.timestamp,
                        self._fsh.chamberObj.quality)
+
+    def extendedFormulaCallback(self):
+        self.fireEvent('ExtendedFormula', self._fsh.formulaObj.extendedFormula)
+
     #----- PROTECTED REGION END -----#	//	FSHOffset.global_variables
 
     def __init__(self, cl, name):
@@ -115,6 +119,7 @@ class FSHOffset (PyTango.Device_4Impl):
         self.attr_MotorPosition_read = 0.0
         self.attr_ChamberOffsetX_read = 0.0
         self.attr_Formula_read = ""
+        self.attr_ExtendedFormula_read = ""
         #----- PROTECTED REGION ID(FSHOffset.init_device) ENABLED START -----#
         self.set_change_event('State', True, False)
         self.set_change_event('Status', True, False)
@@ -134,9 +139,12 @@ class FSHOffset (PyTango.Device_4Impl):
                             error=self.error_stream, warning=self.warn_stream,
                             info=self.info_stream, debug=self.debug_stream)
             self._fsh.positionObj.appendCb(self.motorPositionCallback)
+            self._fsh.positionObj.appendCb(self.extendedFormulaCallback)
             self.set_change_event('MotorPosition', True, False)
             self._fsh.chamberObj.appendCb(self.chamberOffsetXCallback)
+            self._fsh.chamberObj.appendCb(self.extendedFormulaCallback)
             self.set_change_event('ChamberOffsetX', True, False)
+            self.set_change_event('ExtendedFormula', True, False)
         except Exception as e:
             self._fsh = None
             self.error_stream("Cannot build the FSH object: %s" % e)
@@ -224,6 +232,15 @@ class FSHOffset (PyTango.Device_4Impl):
             self.attr_Formula_read = self._fsh.formula
             attr.set_value(self.attr_Formula_read)
         #----- PROTECTED REGION END -----#	//	FSHOffset.Formula_read
+        
+    def read_ExtendedFormula(self, attr):
+        self.debug_stream("In read_ExtendedFormula()")
+        #----- PROTECTED REGION ID(FSHOffset.ExtendedFormula_read) ENABLED START -----#
+        if self._fsh is not None:
+            self.attr_ExtendedFormula_read = \
+                self._fsh.formulaObj.extendedFormula
+            attr.set_value(self.attr_ExtendedFormula_read)
+        #----- PROTECTED REGION END -----#	//	FSHOffset.ExtendedFormula_read
         
     
     
@@ -337,6 +354,10 @@ class FSHOffsetClass(PyTango.DeviceClass):
             PyTango.SCALAR,
             PyTango.READ]],
         'Formula':
+            [[PyTango.DevString,
+            PyTango.SCALAR,
+            PyTango.READ]],
+        'ExtendedFormula':
             [[PyTango.DevString,
             PyTango.SCALAR,
             PyTango.READ]],

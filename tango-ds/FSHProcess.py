@@ -225,6 +225,7 @@ class Formula(Logger):
         self._offset = 0
         self._motor = motor
         self._formulaStr = None
+        self._extendedFormula = ""
         self.formulaStr = formulaStr
 
     @property
@@ -243,6 +244,10 @@ class Formula(Logger):
     def formulaStr(self):
         return self._formulaStr
 
+    @property
+    def extendedFormula(self):
+        return self._extendedFormula
+
     @formulaStr.setter
     def formulaStr(self, value):
         if value.count("OFFSET") == 0:
@@ -252,15 +257,29 @@ class Formula(Logger):
         self._formulaStr = value
 
     def evaluate(self):
-        formula = self._formulaStr
+        extendedFormula = formula = self._formulaStr
         if formula.count("OFFSET"):
             formula = formula.replace("OFFSET", 'self.offset')
+            try:
+                value = " %g " % self.offset
+            except:
+                self.warning("Cannot replace OFFSET as a float")
+                value = " %s " % self.offset
+            extendedFormula = extendedFormula.replace("OFFSET", value)
         if formula.count("POSITION"):
             formula = formula.replace("POSITION", 'self.position')
+            try:
+                value = " %g " % self.position
+            except:
+                self.warning("Cannot replace OFFSET as a float")
+                value = " %s " % self.position
+            extendedFormula = extendedFormula.replace("POSITION", value)
         result = eval(formula)
+        self._extendedFormula = extendedFormula
         self.debug("with offset = %s, position = %s, "
-                   "the formula %s returns %s" % (self.offset, self.position,
-                                                  self.formulaStr, result))
+                   "the formula %s returns %s = %s"
+                   % (self.offset, self.position, self.formulaStr,
+                      extendedFormula, result))
         return result
 
 
@@ -306,9 +325,7 @@ class FSH(Logger):
         return self._formulaObj.formulaStr
 
     def evaluate(self):
-        self.info("> FSH.evaluate()")
         self._chamberObj.value = self._formulaObj.evaluate()
-        self.info("< evaluation done")
         return self._chamberObj.value
 
     def check(self):
