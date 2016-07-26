@@ -47,6 +47,8 @@ import sys
 # Add additional import
 #----- PROTECTED REGION ID(FSHOffset.additionnal_import) ENABLED START -----#
 from FSHProcess import FSH
+from time import time
+from types import StringType
 #----- PROTECTED REGION END -----#	//	FSHOffset.additionnal_import
 
 # Device States Description
@@ -69,6 +71,27 @@ class FSHOffset (PyTango.Device_4Impl):
         if newstatus != self.get_status():
             self.push_change_event('Status', newstatus)
             self.set_status(newstatus)
+
+    def fireEvent(self, attrName, value, timestamp=None, quality=None,
+                  doLog=True):
+        if quality is None:
+            quality = PyTango.AttrQuality.ATTR_VALID
+        if timestamp is None:
+            timestamp = time()
+        if doLog:
+            self.info_stream("fireEvent(%s, %s, %s, %s)"
+                             % (attrName, value, timestamp, quality))
+        self.push_change_event(attrName, value, timestamp, quality)
+
+    def motorPositionCallback(self):
+        self.fireEvent('MotorPosition', self._fsh.positionObj.value,
+                       self._fsh.positionObj.timestamp,
+                       self._fsh.positionObj.quality)
+
+    def chamberOffsetXCallback(self):
+        self.fireEvent('ChamberOffsetX', self._fsh.chamberObj.value,
+                       self._fsh.chamberObj.timestamp,
+                       self._fsh.chamberObj.quality)
     #----- PROTECTED REGION END -----#	//	FSHOffset.global_variables
 
     def __init__(self, cl, name):
@@ -89,16 +112,33 @@ class FSHOffset (PyTango.Device_4Impl):
         self.debug_stream("In init_device()")
         self.get_device_properties(self.get_device_class())
         self.attr_offset_read = 0.0
+        self.attr_MotorPosition_read = 0.0
+        self.attr_ChamberOffsetX_read = 0.0
+        self.attr_Formula_read = ""
         #----- PROTECTED REGION ID(FSHOffset.init_device) ENABLED START -----#
         self.set_change_event('State', True, False)
         self.set_change_event('Status', True, False)
         self.change_state(PyTango.DevState.INIT)
         self.change_status("Initializing...")
+        #tools for the Exec() cmd
+        DS_MODULE = __import__(self.__class__.__module__)
+        kM = dir(DS_MODULE)
+        vM = map(DS_MODULE.__getattribute__, kM)
+        self.__globals = dict(zip(kM, vM))
+        self.__globals['self'] = self
+        self.__globals['module'] = DS_MODULE
+        self.__locals = {}
+        #prepare reference objects
         try:
             self._fsh = FSH(self.motor, self.iba, self.formula,
                             error=self.error_stream, warning=self.warn_stream,
                             info=self.info_stream, debug=self.debug_stream)
+            self._fsh.positionObj.appendCb(self.motorPositionCallback)
+            self.set_change_event('MotorPosition', True, False)
+            self._fsh.chamberObj.appendCb(self.chamberOffsetXCallback)
+            self.set_change_event('ChamberOffsetX', True, False)
         except Exception as e:
+            self._fsh = None
             self.error_stream("Cannot build the FSH object: %s" % e)
             self.change_state(PyTango.DevState.FAULT)
             self.change_status("Review the properties")
@@ -123,21 +163,67 @@ class FSHOffset (PyTango.Device_4Impl):
     def read_offset(self, attr):
         self.debug_stream("In read_offset()")
         #----- PROTECTED REGION ID(FSHOffset.offset_read) ENABLED START -----#
-        self.attr_offset_read = self._fsh.offset
-        attr.set_value(self.attr_offset_read)
-        
+        if self._fsh is not None:
+            self.attr_offset_read = self._fsh.offset
+            attr.set_value(self.attr_offset_read)
+        else:
+            self.warn_stream("read_offset when not build the FSH() object")
         #----- PROTECTED REGION END -----#	//	FSHOffset.offset_read
         
     def write_offset(self, attr):
         self.debug_stream("In write_offset()")
         data = attr.get_write_value()
         #----- PROTECTED REGION ID(FSHOffset.offset_write) ENABLED START -----#
-        if hasattr(self, '_fsh') and self._fsh is not None:
+        if self._fsh is not None:
             self._fsh.offset = data
             self.push_change_event('Offset', self._fsh.offset)
         else:
             self.warn_stream("write_offset when not build the FSH() object")
         #----- PROTECTED REGION END -----#	//	FSHOffset.offset_write
+        
+    def read_MotorPosition(self, attr):
+        self.debug_stream("In read_MotorPosition()")
+        #----- PROTECTED REGION ID(FSHOffset.MotorPosition_read) ENABLED START -----#
+        if self._fsh is not None:
+            self.attr_MotorPosition_read = self._fsh.positionObj.value
+            if self.attr_MotorPosition_read is not None:
+                timestamp = self._fsh.positionObj.timestamp or time()
+                attr.set_value_date_quality(self.attr_MotorPosition_read,
+                                            timestamp,
+                                            PyTango.AttrQuality.ATTR_VALID)
+            else:
+                attr.set_value_date_quality(0,time(),
+                                            PyTango.AttrQuality.ATTR_INVALID)
+        else:
+            self.warn_stream("read_MotorPosition when not build the FSH() "
+                             "object")
+        #----- PROTECTED REGION END -----#	//	FSHOffset.MotorPosition_read
+        
+    def read_ChamberOffsetX(self, attr):
+        self.debug_stream("In read_ChamberOffsetX()")
+        #----- PROTECTED REGION ID(FSHOffset.ChamberOffsetX_read) ENABLED START -----#
+        if self._fsh is not None:
+            self.attr_ChamberOffsetX_read = self._fsh.chamberObj.value
+            if self.attr_ChamberOffsetX_read is not None:
+                timestamp = self._fsh.chamberObj.timestamp or time()
+                attr.set_value_date_quality(self.attr_ChamberOffsetX_read,
+                                            timestamp,
+                                            PyTango.AttrQuality.ATTR_VALID)
+            else:
+                attr.set_value_date_quality(0,time(),
+                                            PyTango.AttrQuality.ATTR_INVALID)
+        else:
+            self.warn_stream("read_IBAChamberOffsetX when not build the FSH() "
+                             "object")
+        #----- PROTECTED REGION END -----#	//	FSHOffset.ChamberOffsetX_read
+        
+    def read_Formula(self, attr):
+        self.debug_stream("In read_Formula()")
+        #----- PROTECTED REGION ID(FSHOffset.Formula_read) ENABLED START -----#
+        if self._fsh is not None:
+            self.attr_Formula_read = self._fsh.formula
+            attr.set_value(self.attr_Formula_read)
+        #----- PROTECTED REGION END -----#	//	FSHOffset.Formula_read
         
     
     
@@ -153,6 +239,41 @@ class FSHOffset (PyTango.Device_4Impl):
     #    FSHOffset command methods
     # -------------------------------------------------------------------------
     
+    def Exec(self, argin):
+        """ 
+        :param argin: statement to executed
+        :type argin: PyTango.DevString
+        :return: result
+        :rtype: PyTango.DevString
+        """
+        self.debug_stream("In Exec()")
+        argout = ""
+        #----- PROTECTED REGION ID(FSHOffset.Exec) ENABLED START -----#
+        try:
+            try:
+                # interpretation as expression
+                argout = eval(argin,self.__globals,self.__locals)
+            except SyntaxError:
+                # interpretation as statement
+                exec argin in self.__globals, self.__locals
+                argout = self.__locals.get("y")
+
+        except Exception, exc:
+            # handles errors on both eval and exec level
+            argout = traceback.format_exc()
+
+        if type(argout)==StringType:
+            return argout
+        elif isinstance(argout, BaseException):
+            return "%s!\n%s" % (argout.__class__.__name__, str(argout))
+        else:
+            try:
+                return pprint.pformat(argout)
+            except Exception:
+                return str(argout)
+        #----- PROTECTED REGION END -----#	//	FSHOffset.Exec
+        return argout
+        
 
     #----- PROTECTED REGION ID(FSHOffset.programmer_methods) ENABLED START -----#
     
@@ -189,6 +310,12 @@ class FSHOffsetClass(PyTango.DeviceClass):
 
     #    Command definitions
     cmd_list = {
+        'Exec':
+            [[PyTango.DevString, "statement to executed"],
+            [PyTango.DevString, "result"],
+            {
+                'Display level': PyTango.DispLevel.EXPERT,
+            } ],
         }
 
 
@@ -201,6 +328,18 @@ class FSHOffsetClass(PyTango.DeviceClass):
             {
                 'Memorized':"true"
             } ],
+        'MotorPosition':
+            [[PyTango.DevDouble,
+            PyTango.SCALAR,
+            PyTango.READ]],
+        'ChamberOffsetX':
+            [[PyTango.DevDouble,
+            PyTango.SCALAR,
+            PyTango.READ]],
+        'Formula':
+            [[PyTango.DevString,
+            PyTango.SCALAR,
+            PyTango.READ]],
         }
 
 

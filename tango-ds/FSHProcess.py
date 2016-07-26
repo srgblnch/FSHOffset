@@ -74,6 +74,7 @@ class Monitor(Logger):
                                  % self._name)
         self._eventId = None
         self._value = None
+        self._quality = None
         self._minPeriod = minPeriod
         self._minChange = minChange
         self._timestamp = None
@@ -95,17 +96,15 @@ class Monitor(Logger):
 
     def push_event(self, event):
         if event is not None and event.attr_value is not None:
-            # self.debug("%s event received: %s"
-            #            % (self._name, event.attr_value))
             if self._checkPeriod(event.attr_value.time.totime()):
                 self._timestamp = event.attr_value.time.totime()
                 if self._checkChange(event.attr_value.value):
                     self._value = event.attr_value.value
-                    self.debug("%s new value %s (%s)" % (self._name, self._value,
-                                                    self._timestamp))
-                    if self._callbacks is not None:
-                        for callback in self._callbacks:
-                            callback()
+                    self._quality = event.attr_value.quality
+                    self.info("%s new value %s (%s, %s)"
+                              % (self._name, self._value,
+                                 self._quality, self._timestamp))
+                    self._reviewCallbacks()
 
     @property
     def minPeriod(self):
@@ -142,7 +141,8 @@ class Monitor(Logger):
         else:
             v_diff = abs(value - self._value)
             if v_diff > self._minChange:
-                self.debug("%s: change enough value (%f)" % (self._name, v_diff))
+                self.debug("%s: change enough value (%f)" % (self._name,
+                                                             v_diff))
                 return True
             self.debug("%s: to small change (%f)" % (self._name, v_diff))
         return False
@@ -151,6 +151,14 @@ class Monitor(Logger):
         return self._value
 
     value = property(_value_getter)
+
+    @property
+    def timestamp(self):
+        return self._timestamp
+
+    @property
+    def quality(self):
+        return self._quality
 
     @property
     def callbacks(self):
@@ -162,16 +170,45 @@ class Monitor(Logger):
                 self._callbacks = []
             self._callbacks.append(function)
 
+    def _reviewCallbacks(self):
+        if self._callbacks is not None:
+            for callback in self._callbacks:
+                callback()
+
 
 class Writter(Monitor):
     def __init__(self, *args, **kwargs):
         super(Writter, self).__init__(*args, **kwargs)
 
     def _value_setter(self, value):
+        self._value = value
         self.info("%s: write: %s" % (self._name, value))
-        self._proxy[self._attrName] = value
+        self._proxy[self._attrName] = self._value
 
     value = property(Monitor._value_getter, _value_setter)
+
+    def push_event(self, event):
+        if event is not None and event.attr_value is not None:
+            if event.attr_value.value is None:
+                self.info("Received a %s value (%s)"
+                          % (event.attr_value.value, self.value))
+            elif self.value is None:
+                self.info("Received a value %g when self structure "
+                          "not yet initialised (%s)" % (event.attr_value.value,
+                                                        self.value))
+                self._value = event.attr_value.value
+                self._reviewCallbacks()
+            elif self.value == event.attr_value.value:
+                self.info("Received a confirmation of the write (%g)"
+                          % event.attr_value.value)
+                self._timestamp = event.attr_value.time.totime()
+                self._reviewCallbacks()
+            else:
+                self.warning("Received a value change but it doesn't "
+                             "corresponds with what shall be (%g != %g)"
+                             % (self.value, event.attr_value.value))
+                # rewrite
+                self._proxy[self._attrName] = self.value
 
 
 class Formula(Logger):
@@ -231,6 +268,8 @@ class FSH(Logger):
         self._positionObj = Monitor(motorName, 'Position', *args, **kwargs)
         self._formulaObj = Formula(formula, self._positionObj, *args, **kwargs)
         self._positionObj.appendCb(self.evaluate)
+        # to check if it has been written from another side
+        self._chamberObj.appendCb(self.check)
 
     @property
     def positionObj(self):
@@ -259,9 +298,17 @@ class FSH(Logger):
         return self._formulaObj.formulaStr
 
     def evaluate(self):
-        self.debug("FSH.evaluate()")
+        self.info("> FSH.evaluate()")
         self._chamberObj.value = self._formulaObj.evaluate()
+        self.info("< evaluation done")
         return self._chamberObj.value
+
+    def check(self):
+        itIs = self._chamberObj.value
+        shallBe = self._formulaObj.evaluate()
+        if itIs != shallBe:
+            self.warning("ChamberOffsetX is %g and shall be %g"
+                         % (itIs, shallBe))
 
 
 # ##########################################################################---
