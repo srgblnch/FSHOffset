@@ -274,13 +274,16 @@ class Formula(Logger):
                 self.warning("Cannot replace OFFSET as a float")
                 value = " %s " % self.position
             extendedFormula = extendedFormula.replace("POSITION", value)
-        result = eval(formula)
         self._extendedFormula = extendedFormula
-        self.debug("with offset = %s, position = %s, "
-                   "the formula %s returns %s = %s"
-                   % (self.offset, self.position, self.formulaStr,
-                      extendedFormula, result))
-        return result
+        try:
+            result = eval(formula)
+            self.debug("with offset = %s, position = %s, "
+                       "the formula %s returns %s = %s"
+                       % (self.offset, self.position, self.formulaStr,
+                          extendedFormula, result))
+            return result
+        except Exception as e:
+            self.error("Exception in the _eval_: %s" % (e))
 
 
 class FSH(Logger):
@@ -325,13 +328,15 @@ class FSH(Logger):
         return self._formulaObj.formulaStr
 
     def evaluate(self):
-        self._chamberObj.value = self._formulaObj.evaluate()
-        return self._chamberObj.value
+        value = self._formulaObj.evaluate()
+        if value is not None:
+            self._chamberObj.value = value
+            return self._chamberObj.value
 
     def check(self):
         itIs = self._chamberObj.value
         shallBe = self._formulaObj.evaluate()
-        if itIs != shallBe:
+        if shallBe is not None and itIs != shallBe:
             self.warning("ChamberOffsetX is %g and shall be %g"
                          % (itIs, shallBe))
 
