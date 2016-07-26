@@ -23,7 +23,7 @@ __copyright__ = "Copyright 2016, CELLS / ALBA Synchrotron"
 __license__ = "GPLv3+"
 
 
-from PyTango import DeviceProxy, EventType
+from PyTango import DeviceProxy, EventType, DevFailed
 
 
 class Logger(object):
@@ -183,7 +183,15 @@ class Writter(Monitor):
     def _value_setter(self, value):
         self._value = value
         self.info("%s: write: %s" % (self._name, value))
-        self._proxy[self._attrName] = self._value
+        self.write2proxy(self._value)
+
+    def write2proxy(self, value):
+        try:
+            self._proxy[self._attrName] = value
+        except DevFailed as e:
+            self.error("%s: %s" % (e[0].reason, e[0].desc))
+        except Exception as e:
+            self.error("Exception in write: %s" % (e))
 
     value = property(Monitor._value_getter, _value_setter)
 
@@ -208,7 +216,7 @@ class Writter(Monitor):
                              "corresponds with what shall be (%g != %g)"
                              % (self.value, event.attr_value.value))
                 # rewrite
-                self._proxy[self._attrName] = self.value
+                self.write2proxy(self._value)
 
 
 class Formula(Logger):
